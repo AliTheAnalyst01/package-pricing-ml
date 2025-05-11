@@ -8,6 +8,7 @@ import os
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+import io
 
 # Set page configuration
 st.set_page_config(
@@ -17,42 +18,55 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-def get_latest_file(directory, prefix):
-    """Get the most recent file with a given prefix in a directory."""
-    files = [f for f in os.listdir(directory) if f.startswith(prefix)]
-    if not files:
-        return None
-    return os.path.join(directory, sorted(files)[-1])
-
-def load_data():
-    """Load the latest pricing recommendations."""
-    # Look for enhanced pricing data first
-    product_file = get_latest_file('results', 'enhanced_product_pricing_')
-    if not product_file:
-        # Fall back to regular pricing data if enhanced not found
-        product_file = get_latest_file('results', 'product_pricing_recommendations_')
+def load_data_from_uploads():
+    """Load data from user uploaded files."""
+    product_prices = None
+    bundle_prices = None
+    test_results = None
     
-    if product_file:
-        product_prices = pd.read_csv(product_file)
-    else:
-        product_prices = None
+    st.sidebar.header("Upload Data Files")
     
-    # Load bundle pricing recommendations
-    bundle_file = get_latest_file('results', 'enhanced_bundle_pricing_')
-    if not bundle_file:
-        bundle_file = get_latest_file('results', 'bundle_pricing_recommendations_')
-        
-    if bundle_file:
-        bundle_prices = pd.read_csv(bundle_file)
-    else:
-        bundle_prices = None
+    # Allow users to upload product pricing data
+    product_file = st.sidebar.file_uploader(
+        "Upload Product Pricing Data (CSV)",
+        type=["csv"],
+        help="Upload your enhanced_product_pricing_*.csv file"
+    )
     
-    # Load test results if available
-    test_results_file = get_latest_file('experiments', 'price_test')
-    if test_results_file and test_results_file.endswith('_results.csv'):
-        test_results = pd.read_csv(test_results_file)
-    else:
-        test_results = None
+    if product_file is not None:
+        try:
+            product_prices = pd.read_csv(product_file)
+            st.sidebar.success(f"Loaded product pricing data: {product_file.name}")
+        except Exception as e:
+            st.sidebar.error(f"Error loading product data: {e}")
+    
+    # Allow users to upload bundle pricing data
+    bundle_file = st.sidebar.file_uploader(
+        "Upload Bundle Pricing Data (CSV)",
+        type=["csv"],
+        help="Upload your enhanced_bundle_pricing_*.csv file"
+    )
+    
+    if bundle_file is not None:
+        try:
+            bundle_prices = pd.read_csv(bundle_file)
+            st.sidebar.success(f"Loaded bundle pricing data: {bundle_file.name}")
+        except Exception as e:
+            st.sidebar.error(f"Error loading bundle data: {e}")
+    
+    # Allow users to upload test results data
+    test_file = st.sidebar.file_uploader(
+        "Upload A/B Test Results (CSV)",
+        type=["csv"],
+        help="Upload your price_test_*_results.csv file"
+    )
+    
+    if test_file is not None:
+        try:
+            test_results = pd.read_csv(test_file)
+            st.sidebar.success(f"Loaded A/B test results: {test_file.name}")
+        except Exception as e:
+            st.sidebar.error(f"Error loading test results: {e}")
     
     return product_prices, bundle_prices, test_results
 
@@ -63,17 +77,48 @@ def main():
     
     st.markdown("""
     This dashboard displays the results of the package pricing optimization analysis.
-    Use the filters on the sidebar to explore different aspects of the pricing recommendations.
+    
+    ### How to use:
+    1. Upload your data files using the sidebar.
+    2. Use the filters on the sidebar to explore different aspects of the pricing recommendations.
+    3. View detailed insights in each section below.
     """)
     
-    # Load data
-    product_prices, bundle_prices, test_results = load_data()
+    # Load data from uploads
+    product_prices, bundle_prices, test_results = load_data_from_uploads()
     
-    if product_prices is None and bundle_prices is None:
-        st.error("No pricing data found. Please run the optimization script first.")
+    if product_prices is None and bundle_prices is None and test_results is None:
+        st.warning("No data loaded. Please upload your pricing data files using the sidebar.")
+        st.info("""
+        ### Expected files:
+        - **Product Pricing**: enhanced_product_pricing_YYYYMMDD.csv (from results folder)
+        - **Bundle Pricing**: enhanced_bundle_pricing_YYYYMMDD.csv (from results folder)
+        - **A/B Test Results**: price_test_YYYYMMDD_results.csv (from experiments folder)
+        """)
+        
+        # Show instructions for finding files
+        with st.expander("How to find your data files"):
+            st.markdown("""
+            The data files are located in your project folders:
+            
+            1. **Product Pricing Files**:
+               - Path: `results/enhanced_product_pricing_*.csv`
+               - These files contain your optimized product pricing recommendations
+            
+            2. **Bundle Pricing Files**:
+               - Path: `results/enhanced_bundle_pricing_*.csv`
+               - These files contain your optimized bundle discount recommendations
+            
+            3. **A/B Test Results Files**:
+               - Path: `experiments/price_test_*_results.csv`
+               - These files contain the results of your pricing A/B tests
+            
+            The most recent files (with the latest dates in the filename) contain your most up-to-date data.
+            """)
+        
         return
     
-    # Sidebar
+    # Sidebar filters
     st.sidebar.title("Filters")
     
     # Product section
@@ -357,6 +402,32 @@ def main():
                     display_df['Revenue Lift (%)'] = display_df['Revenue Lift (%)'].apply(lambda x: f"{x:+.1f}%")
                 
                 st.dataframe(display_df, use_container_width=True)
+    
+    # Download buttons for recommended prices
+    if product_prices is not None or bundle_prices is not None:
+        st.header("Export Optimized Pricing")
+        
+        col1, col2 = st.columns(2)
+        
+        if product_prices is not None:
+            with col1:
+                csv_product = product_prices.to_csv(index=False)
+                st.download_button(
+                    label="Download Product Pricing CSV",
+                    data=csv_product,
+                    file_name=f"product_pricing_export_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+        
+        if bundle_prices is not None:
+            with col2:
+                csv_bundle = bundle_prices.to_csv(index=False)
+                st.download_button(
+                    label="Download Bundle Pricing CSV",
+                    data=csv_bundle,
+                    file_name=f"bundle_pricing_export_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
     
     # Footer
     st.markdown("---")
