@@ -123,289 +123,436 @@ def main():
     
     # Product section
     if product_prices is not None:
-        st.header("Product Pricing Recommendations")
+        # Inspect columns and map to expected column names
+        df_columns = product_prices.columns.str.lower()
         
-        # Determine price column names
+        # Map for price change percentage
+        price_change_cols = [col for col in df_columns if 'price_change' in col or 'change_pct' in col]
+        price_change_col = price_change_cols[0] if price_change_cols else None
+        
+        # Map for price columns
         if 'base_price' in product_prices.columns:
             price_col = 'base_price'
-        else:
+        elif 'price' in product_prices.columns:
             price_col = 'price'
+        else:
+            price_candidates = [col for col in product_prices.columns if 'price' in col.lower() and 'change' not in col.lower() and 'optimal' not in col.lower()]
+            price_col = price_candidates[0] if price_candidates else None
         
-        # Summary metrics
-        col1, col2, col3 = st.columns(3)
+        # Map for optimal price
+        if 'optimal_price' in product_prices.columns:
+            optimal_price_col = 'optimal_price'
+        else:
+            optimal_candidates = [col for col in product_prices.columns if 'optimal' in col.lower() and 'price' in col.lower()]
+            optimal_price_col = optimal_candidates[0] if optimal_candidates else None
         
-        with col1:
-            avg_price_change = product_prices['price_change_pct'].mean()
-            st.metric("Average Price Change", f"{avg_price_change:.1f}%")
+        # Map for profit change
+        profit_change_cols = [col for col in df_columns if 'profit' in col and 'change' in col]
+        profit_change_col = profit_change_cols[0] if profit_change_cols else None
         
-        with col2:
-            price_increases = (product_prices['price_change_pct'] > 0).sum()
-            st.metric("Products with Price Increases", f"{price_increases} ({price_increases/len(product_prices)*100:.1f}%)")
+        # Map for recommendation
+        recommend_cols = [col for col in df_columns if 'recommend' in col]
+        recommend_col = recommend_cols[0] if recommend_cols else None
         
-        with col3:
-            price_decreases = (product_prices['price_change_pct'] < 0).sum()
-            st.metric("Products with Price Decreases", f"{price_decreases} ({price_decreases/len(product_prices)*100:.1f}%)")
+        # Map for elasticity
+        elasticity_cols = [col for col in df_columns if 'elastic' in col and 'source' not in col]
+        elasticity_col = elasticity_cols[0] if elasticity_cols else None
+        
+        # Check if we have minimum required columns
+        if price_col and price_change_col:
+            st.header("Product Pricing Recommendations")
             
-        if 'profit_change_pct' in product_prices.columns:
-            col1, col2 = st.columns(2)
+            # Summary metrics
+            col1, col2, col3 = st.columns(3)
+            
             with col1:
-                avg_profit_impact = product_prices['profit_change_pct'].mean()
-                st.metric("Average Profit Impact", f"{avg_profit_impact:.1f}%")
+                avg_price_change = product_prices[price_change_col].mean()
+                st.metric("Average Price Change", f"{avg_price_change:.1f}%")
             
             with col2:
-                if 'recommend_change' in product_prices.columns:
-                    recommended = product_prices[product_prices['recommend_change']].shape[0]
-                    st.metric("Recommended Changes", f"{recommended} ({recommended/len(product_prices)*100:.1f}%)")
-        
-        # Price change distribution
-        fig = px.histogram(
-            product_prices, 
-            x='price_change_pct',
-            title='Distribution of Recommended Price Changes',
-            labels={'price_change_pct': 'Price Change (%)'},
-            color_discrete_sequence=['#3498db']
-        )
-        fig.add_vline(x=0, line_dash="dash", line_color="red")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Elasticity vs Price Change
-        if 'elasticity' in product_prices.columns:
-            fig = px.scatter(
+                price_increases = (product_prices[price_change_col] > 0).sum()
+                st.metric("Products with Price Increases", f"{price_increases} ({price_increases/len(product_prices)*100:.1f}%)")
+            
+            with col3:
+                price_decreases = (product_prices[price_change_col] < 0).sum()
+                st.metric("Products with Price Decreases", f"{price_decreases} ({price_decreases/len(product_prices)*100:.1f}%)")
+                
+            if profit_change_col:
+                col1, col2 = st.columns(2)
+                with col1:
+                    avg_profit_impact = product_prices[profit_change_col].mean()
+                    st.metric("Average Profit Impact", f"{avg_profit_impact:.1f}%")
+                
+                with col2:
+                    if recommend_col:
+                        recommended = product_prices[recommend_col].sum() if product_prices[recommend_col].dtype == bool else None
+                        if recommended is not None:
+                            st.metric("Recommended Changes", f"{recommended} ({recommended/len(product_prices)*100:.1f}%)")
+            
+            # Price change distribution
+            fig = px.histogram(
                 product_prices, 
-                x='elasticity', 
-                y='price_change_pct',
-                hover_data=['product_name', price_col, 'optimal_price'],
-                title='Price Elasticity vs. Recommended Price Change',
-                labels={
-                    'elasticity': 'Price Elasticity', 
-                    'price_change_pct': 'Recommended Price Change (%)',
-                    'product_name': 'Product',
-                    price_col: 'Current Price',
-                    'optimal_price': 'Recommended Price'
-                },
-                color='recommend_change' if 'recommend_change' in product_prices.columns else None,
+                x=price_change_col,
+                title='Distribution of Recommended Price Changes',
+                labels={price_change_col: 'Price Change (%)'},
+                color_discrete_sequence=['#3498db']
             )
-            fig.add_hline(y=0, line_dash="dash", line_color="red")
+            fig.add_vline(x=0, line_dash="dash", line_color="red")
             st.plotly_chart(fig, use_container_width=True)
-        
-        # Product table
-        st.subheader("Product Details")
-        
-        # Add price change filter
-        price_change_filter = st.sidebar.radio(
-            "Filter by Price Change",
-            ["All", "Price Increases Only", "Price Decreases Only"]
-        )
-        
-        filtered_products = product_prices.copy()
-        
-        if price_change_filter == "Price Increases Only":
-            filtered_products = filtered_products[filtered_products['price_change_pct'] > 0]
-        elif price_change_filter == "Price Decreases Only":
-            filtered_products = filtered_products[filtered_products['price_change_pct'] < 0]
-        
-        # Sort option
-        sort_by = st.sidebar.selectbox(
-            "Sort Products By",
-            ["Name (A-Z)", "Price (Low to High)", "Price (High to Low)", 
-             "Price Change (Highest)", "Price Change (Lowest)"]
-        )
-        
-        if sort_by == "Name (A-Z)":
-            filtered_products = filtered_products.sort_values('product_name')
-        elif sort_by == "Price (Low to High)":
-            filtered_products = filtered_products.sort_values(price_col)
-        elif sort_by == "Price (High to Low)":
-            filtered_products = filtered_products.sort_values(price_col, ascending=False)
-        elif sort_by == "Price Change (Highest)":
-            filtered_products = filtered_products.sort_values('price_change_pct', ascending=False)
-        elif sort_by == "Price Change (Lowest)":
-            filtered_products = filtered_products.sort_values('price_change_pct')
-        
-        # Display columns
-        display_cols = ['product_name', price_col, 'optimal_price', 'price_change_pct']
-        
-        # Add profit impact if available
-        if 'profit_change_pct' in filtered_products.columns:
-            display_cols.append('profit_change_pct')
-        
-        # Create a formatted dataframe for display
-        display_df = filtered_products[display_cols].copy()
-        
-        # Format columns
-        display_df = display_df.rename(columns={
-            price_col: 'Current Price',
-            'optimal_price': 'Recommended Price',
-            'price_change_pct': 'Price Change (%)',
-            'profit_change_pct': 'Profit Impact (%)'
-        })
-        
-        # Format price columns as currency
-        for col in ['Current Price', 'Recommended Price']:
-            if col in display_df.columns:
-                display_df[col] = display_df[col].apply(lambda x: f"${x:.2f}")
-        
-        # Format percentage columns
-        for col in ['Price Change (%)', 'Profit Impact (%)']:
-            if col in display_df.columns:
-                display_df[col] = display_df[col].apply(lambda x: f"{x:+.1f}%" if x != 0 else "0.0%")
-        
-        st.dataframe(display_df, use_container_width=True)
+            
+            # Elasticity vs Price Change
+            if elasticity_col:
+                fig = px.scatter(
+                    product_prices, 
+                    x=elasticity_col, 
+                    y=price_change_col,
+                    hover_data=['product_name', price_col] + ([optimal_price_col] if optimal_price_col else []),
+                    title='Price Elasticity vs. Recommended Price Change',
+                    labels={
+                        elasticity_col: 'Price Elasticity', 
+                        price_change_col: 'Recommended Price Change (%)',
+                        'product_name': 'Product',
+                        price_col: 'Current Price',
+                        optimal_price_col: 'Recommended Price' if optimal_price_col else None
+                    },
+                    color=recommend_col if recommend_col else None,
+                )
+                fig.add_hline(y=0, line_dash="dash", line_color="red")
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Product table
+            st.subheader("Product Details")
+            
+            # Add price change filter
+            price_change_filter = st.sidebar.radio(
+                "Filter by Price Change",
+                ["All", "Price Increases Only", "Price Decreases Only"]
+            )
+            
+            filtered_products = product_prices.copy()
+            
+            if price_change_filter == "Price Increases Only":
+                filtered_products = filtered_products[filtered_products[price_change_col] > 0]
+            elif price_change_filter == "Price Decreases Only":
+                filtered_products = filtered_products[filtered_products[price_change_col] < 0]
+            
+            # Sort option
+            sort_by = st.sidebar.selectbox(
+                "Sort Products By",
+                ["Name (A-Z)", "Price (Low to High)", "Price (High to Low)", 
+                 "Price Change (Highest)", "Price Change (Lowest)"]
+            )
+            
+            if sort_by == "Name (A-Z)":
+                filtered_products = filtered_products.sort_values('product_name')
+            elif sort_by == "Price (Low to High)" and price_col:
+                filtered_products = filtered_products.sort_values(price_col)
+            elif sort_by == "Price (High to Low)" and price_col:
+                filtered_products = filtered_products.sort_values(price_col, ascending=False)
+            elif sort_by == "Price Change (Highest)" and price_change_col:
+                filtered_products = filtered_products.sort_values(price_change_col, ascending=False)
+            elif sort_by == "Price Change (Lowest)" and price_change_col:
+                filtered_products = filtered_products.sort_values(price_change_col)
+            
+            # Display columns
+            display_cols = ['product_name']
+            if price_col:
+                display_cols.append(price_col)
+            if optimal_price_col:
+                display_cols.append(optimal_price_col)
+            if price_change_col:
+                display_cols.append(price_change_col)
+            if profit_change_col:
+                display_cols.append(profit_change_col)
+            
+            # Only include columns that exist
+            display_cols = [col for col in display_cols if col in filtered_products.columns]
+            
+            # Create a formatted dataframe for display
+            display_df = filtered_products[display_cols].copy()
+            
+            # Format columns
+            rename_dict = {
+                'product_name': 'Product Name'
+            }
+            if price_col:
+                rename_dict[price_col] = 'Current Price'
+            if optimal_price_col:
+                rename_dict[optimal_price_col] = 'Recommended Price'
+            if price_change_col:
+                rename_dict[price_change_col] = 'Price Change (%)'
+            if profit_change_col:
+                rename_dict[profit_change_col] = 'Profit Impact (%)'
+                
+            display_df = display_df.rename(columns=rename_dict)
+            
+            # Format price columns as currency
+            for col in ['Current Price', 'Recommended Price']:
+                if col in display_df.columns:
+                    display_df[col] = display_df[col].apply(lambda x: f"${x:.2f}")
+            
+            # Format percentage columns
+            for col in ['Price Change (%)', 'Profit Impact (%)']:
+                if col in display_df.columns:
+                    display_df[col] = display_df[col].apply(lambda x: f"{x:+.1f}%" if x != 0 else "0.0%")
+            
+            st.dataframe(display_df, use_container_width=True)
+        else:
+            st.warning("Product pricing data doesn't contain the expected columns. Please check your file.")
     
     # Bundle section
     if bundle_prices is not None:
-        st.header("Bundle Pricing Recommendations")
+        # Inspect bundle columns
+        df_columns = bundle_prices.columns.str.lower()
         
-        # Summary statistics
-        col1, col2, col3 = st.columns(3)
+        # Check if required columns exist
+        discount_cols = [col for col in df_columns if 'discount' in col]
+        discount_col = discount_cols[0] if discount_cols else None
         
-        with col1:
-            avg_discount = bundle_prices['discount_pct'].mean()
-            st.metric("Average Bundle Discount", f"{avg_discount:.1f}%")
+        savings_cols = [col for col in df_columns if 'saving' in col]
+        savings_col = savings_cols[0] if savings_cols else None
         
-        with col2:
-            avg_savings = bundle_prices['savings'].mean()
-            st.metric("Average Customer Savings", f"${avg_savings:.2f}")
+        num_products_cols = [col for col in df_columns if 'num' in col and 'product' in col]
+        num_products_col = num_products_cols[0] if num_products_cols else None
         
-        with col3:
-            total_bundles = len(bundle_prices)
-            st.metric("Total Bundles", f"{total_bundles}")
+        bundle_name_cols = [col for col in df_columns if 'bundle' in col and 'name' in col]
+        bundle_name_col = bundle_name_cols[0] if bundle_name_cols else None
         
-        # Bundle discount distribution
-        fig = px.histogram(
-            bundle_prices, 
-            x='discount_pct',
-            title='Distribution of Bundle Discounts',
-            labels={'discount_pct': 'Discount (%)'},
-            color_discrete_sequence=['#9b59b6']
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        total_price_cols = [col for col in df_columns if 'total' in col and 'price' in col]
+        total_price_col = total_price_cols[0] if total_price_cols else None
         
-        # Bundle size vs. discount
-        fig = px.scatter(
-            bundle_prices, 
-            x='num_products', 
-            y='discount_pct',
-            size='total_individual_price',
-            hover_data=['bundle_name', 'optimal_bundle_price', 'savings'],
-            title='Bundle Size vs. Discount Percentage',
-            labels={
-                'num_products': 'Number of Products in Bundle', 
-                'discount_pct': 'Discount (%)',
-                'bundle_name': 'Bundle',
-                'total_individual_price': 'Total Individual Price',
-                'optimal_bundle_price': 'Bundle Price',
-                'savings': 'Customer Savings'
-            },
-            color_discrete_sequence=['#e74c3c']
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        bundle_price_cols = [col for col in df_columns if ('bundle' in col or 'optimal' in col) and 'price' in col]
+        bundle_price_col = bundle_price_cols[0] if bundle_price_cols else None
         
-        # Bundle table
-        st.subheader("Bundle Details")
-        
-        # Sort bundles
-        sort_bundles_by = st.sidebar.selectbox(
-            "Sort Bundles By",
-            ["Name (A-Z)", "Discount (Highest)", "Discount (Lowest)", 
-             "Savings (Highest)", "Number of Products"]
-        )
-        
-        if sort_bundles_by == "Name (A-Z)":
-            sorted_bundles = bundle_prices.sort_values('bundle_name')
-        elif sort_bundles_by == "Discount (Highest)":
-            sorted_bundles = bundle_prices.sort_values('discount_pct', ascending=False)
-        elif sort_bundles_by == "Discount (Lowest)":
-            sorted_bundles = bundle_prices.sort_values('discount_pct')
-        elif sort_bundles_by == "Savings (Highest)":
-            sorted_bundles = bundle_prices.sort_values('savings', ascending=False)
-        elif sort_bundles_by == "Number of Products":
-            sorted_bundles = bundle_prices.sort_values('num_products', ascending=False)
-        
-        # Create a formatted dataframe for display
-        display_cols = ['bundle_name', 'num_products', 'total_individual_price', 
-                       'discount_pct', 'optimal_bundle_price', 'savings']
-        
-        display_df = sorted_bundles[display_cols].copy()
-        
-        # Format columns
-        display_df = display_df.rename(columns={
-            'bundle_name': 'Bundle Name',
-            'num_products': 'Number of Products',
-            'total_individual_price': 'Total Individual Price',
-            'discount_pct': 'Discount (%)',
-            'optimal_bundle_price': 'Bundle Price',
-            'savings': 'Customer Savings'
-        })
-        
-        # Format price columns as currency
-        for col in ['Total Individual Price', 'Bundle Price', 'Customer Savings']:
-            if col in display_df.columns:
-                display_df[col] = display_df[col].apply(lambda x: f"${x:.2f}")
-        
-        # Format percentage columns
-        if 'Discount (%)' in display_df.columns:
-            display_df['Discount (%)'] = display_df['Discount (%)'].apply(lambda x: f"{x:.1f}%")
-        
-        st.dataframe(display_df, use_container_width=True)
+        if discount_col and bundle_name_col:
+            st.header("Bundle Pricing Recommendations")
+            
+            # Summary statistics
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                avg_discount = bundle_prices[discount_col].mean()
+                st.metric("Average Bundle Discount", f"{avg_discount:.1f}%")
+            
+            with col2:
+                if savings_col:
+                    avg_savings = bundle_prices[savings_col].mean()
+                    st.metric("Average Customer Savings", f"${avg_savings:.2f}")
+            
+            with col3:
+                total_bundles = len(bundle_prices)
+                st.metric("Total Bundles", f"{total_bundles}")
+            
+            # Bundle discount distribution
+            if discount_col:
+                fig = px.histogram(
+                    bundle_prices, 
+                    x=discount_col,
+                    title='Distribution of Bundle Discounts',
+                    labels={discount_col: 'Discount (%)'},
+                    color_discrete_sequence=['#9b59b6']
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Bundle size vs. discount
+            if num_products_col and discount_col:
+                hover_data = [bundle_name_col]
+                if bundle_price_col:
+                    hover_data.append(bundle_price_col)
+                if savings_col:
+                    hover_data.append(savings_col)
+                
+                fig = px.scatter(
+                    bundle_prices, 
+                    x=num_products_col, 
+                    y=discount_col,
+                    size=total_price_col if total_price_col else None,
+                    hover_data=hover_data,
+                    title='Bundle Size vs. Discount Percentage',
+                    labels={
+                        num_products_col: 'Number of Products in Bundle', 
+                        discount_col: 'Discount (%)',
+                        bundle_name_col: 'Bundle',
+                        total_price_col: 'Total Individual Price' if total_price_col else None,
+                        bundle_price_col: 'Bundle Price' if bundle_price_col else None,
+                        savings_col: 'Customer Savings' if savings_col else None
+                    },
+                    color_discrete_sequence=['#e74c3c']
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Bundle table
+            st.subheader("Bundle Details")
+            
+            # Sort bundles
+            sort_bundles_by = st.sidebar.selectbox(
+                "Sort Bundles By",
+                ["Name (A-Z)", "Discount (Highest)", "Discount (Lowest)", 
+                 "Savings (Highest)", "Number of Products"]
+            )
+            
+            sorted_bundles = bundle_prices.copy()
+            
+            if sort_bundles_by == "Name (A-Z)" and bundle_name_col:
+                sorted_bundles = sorted_bundles.sort_values(bundle_name_col)
+            elif sort_bundles_by == "Discount (Highest)" and discount_col:
+                sorted_bundles = sorted_bundles.sort_values(discount_col, ascending=False)
+            elif sort_bundles_by == "Discount (Lowest)" and discount_col:
+                sorted_bundles = sorted_bundles.sort_values(discount_col)
+            elif sort_bundles_by == "Savings (Highest)" and savings_col:
+                sorted_bundles = sorted_bundles.sort_values(savings_col, ascending=False)
+            elif sort_bundles_by == "Number of Products" and num_products_col:
+                sorted_bundles = sorted_bundles.sort_values(num_products_col, ascending=False)
+            
+            # Create a formatted dataframe for display
+            display_cols = []
+            if bundle_name_col:
+                display_cols.append(bundle_name_col)
+            if num_products_col:
+                display_cols.append(num_products_col)
+            if total_price_col:
+                display_cols.append(total_price_col)
+            if discount_col:
+                display_cols.append(discount_col)
+            if bundle_price_col:
+                display_cols.append(bundle_price_col)
+            if savings_col:
+                display_cols.append(savings_col)
+            
+            # Only include columns that exist
+            display_cols = [col for col in display_cols if col in sorted_bundles.columns]
+            
+            if display_cols:
+                display_df = sorted_bundles[display_cols].copy()
+                
+                # Format columns
+                rename_dict = {}
+                if bundle_name_col:
+                    rename_dict[bundle_name_col] = 'Bundle Name'
+                if num_products_col:
+                    rename_dict[num_products_col] = 'Number of Products'
+                if total_price_col:
+                    rename_dict[total_price_col] = 'Total Individual Price'
+                if discount_col:
+                    rename_dict[discount_col] = 'Discount (%)'
+                if bundle_price_col:
+                    rename_dict[bundle_price_col] = 'Bundle Price'
+                if savings_col:
+                    rename_dict[savings_col] = 'Customer Savings'
+                
+                display_df = display_df.rename(columns=rename_dict)
+                
+                # Format price columns as currency
+                for col in ['Total Individual Price', 'Bundle Price', 'Customer Savings']:
+                    if col in display_df.columns:
+                        display_df[col] = display_df[col].apply(lambda x: f"${x:.2f}")
+                
+                # Format percentage columns
+                if 'Discount (%)' in display_df.columns:
+                    display_df['Discount (%)'] = display_df['Discount (%)'].apply(lambda x: f"{x:.1f}%")
+                
+                st.dataframe(display_df, use_container_width=True)
+            else:
+                st.warning("Bundle pricing data doesn't contain enough columns for display.")
+        else:
+            st.warning("Bundle pricing data doesn't contain the expected columns. Please check your file.")
     
     # A/B Testing Results section
     if test_results is not None:
-        st.header("A/B Test Results")
+        # Inspect test results columns
+        df_columns = test_results.columns.str.lower()
         
-        # Check if results have recommendation column
-        if 'recommendation' in test_results.columns:
-            col1, col2 = st.columns(2)
+        # Check if required columns exist
+        recommendation_cols = [col for col in df_columns if 'recommend' in col]
+        recommendation_col = recommendation_cols[0] if recommendation_cols else None
+        
+        product_name_cols = [col for col in df_columns if 'product' in col and 'name' in col]
+        product_name_col = product_name_cols[0] if product_name_cols else None
+        
+        control_price_cols = [col for col in df_columns if 'control' in col and 'price' in col]
+        control_price_col = control_price_cols[0] if control_price_cols else None
+        
+        test_price_cols = [col for col in df_columns if 'test' in col and 'price' in col]
+        test_price_col = test_price_cols[0] if test_price_cols else None
+        
+        revenue_lift_cols = [col for col in df_columns if 'revenue' in col and ('lift' in col or 'change' in col)]
+        revenue_lift_col = revenue_lift_cols[0] if revenue_lift_cols else None
+        
+        if recommendation_col or (product_name_col and control_price_col):
+            st.header("A/B Test Results")
             
-            with col1:
-                recommended = sum(test_results['recommendation'] == 'Implement new price')
-                st.metric("Successful Tests", f"{recommended} out of {len(test_results)}")
-            
-            with col2:
-                if 'revenue_lift' in test_results.columns:
-                    avg_revenue_lift = test_results['revenue_lift'].mean()
-                    st.metric("Average Revenue Lift", f"{avg_revenue_lift:.1f}%")
+            if recommendation_col:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if 'Implement new price' in test_results[recommendation_col].values:
+                        recommended = sum(test_results[recommendation_col] == 'Implement new price')
+                        st.metric("Successful Tests", f"{recommended} out of {len(test_results)}")
+                    else:
+                        # Try to find a success indicator
+                        st.text("Test Results Summary")
+                
+                with col2:
+                    if revenue_lift_col:
+                        avg_revenue_lift = test_results[revenue_lift_col].mean()
+                        st.metric("Average Revenue Lift", f"{avg_revenue_lift:.1f}%")
             
             # Test results table
             st.subheader("Test Results Details")
             
             # Create a formatted dataframe for display
-            if 'product_name' in test_results.columns and 'control_price' in test_results.columns:
-                display_cols = ['product_name', 'control_price', 'test_price', 'revenue_lift', 'recommendation']
+            if product_name_col or control_price_col:
+                display_cols = []
+                if product_name_col:
+                    display_cols.append(product_name_col)
+                if control_price_col:
+                    display_cols.append(control_price_col)
+                if test_price_col:
+                    display_cols.append(test_price_col)
+                if revenue_lift_col:
+                    display_cols.append(revenue_lift_col)
+                if recommendation_col:
+                    display_cols.append(recommendation_col)
                 
-                # Only display columns that exist
+                # Only include columns that exist
                 display_cols = [col for col in display_cols if col in test_results.columns]
                 
-                display_df = test_results[display_cols].copy()
-                
-                # Format columns
-                rename_dict = {
-                    'product_name': 'Product Name',
-                    'control_price': 'Control Price',
-                    'test_price': 'Test Price',
-                    'revenue_lift': 'Revenue Lift (%)',
-                    'recommendation': 'Recommendation'
-                }
-                
-                # Only rename columns that exist
-                rename_dict = {k: v for k, v in rename_dict.items() if k in display_cols}
-                
-                display_df = display_df.rename(columns=rename_dict)
-                
-                # Format price columns as currency
-                for col in ['Control Price', 'Test Price']:
-                    if col in display_df.columns:
-                        display_df[col] = display_df[col].apply(lambda x: f"${x:.2f}")
-                
-                # Format percentage columns
-                if 'Revenue Lift (%)' in display_df.columns:
-                    display_df['Revenue Lift (%)'] = display_df['Revenue Lift (%)'].apply(lambda x: f"{x:+.1f}%")
-                
-                st.dataframe(display_df, use_container_width=True)
+                if display_cols:
+                    display_df = test_results[display_cols].copy()
+                    
+                    # Format columns
+                    rename_dict = {}
+                    if product_name_col:
+                        rename_dict[product_name_col] = 'Product Name'
+                    if control_price_col:
+                        rename_dict[control_price_col] = 'Control Price'
+                    if test_price_col:
+                        rename_dict[test_price_col] = 'Test Price'
+                    if revenue_lift_col:
+                        rename_dict[revenue_lift_col] = 'Revenue Lift (%)'
+                    if recommendation_col:
+                        rename_dict[recommendation_col] = 'Recommendation'
+                    
+                    display_df = display_df.rename(columns=rename_dict)
+                    
+                    # Format price columns as currency
+                    for col in ['Control Price', 'Test Price']:
+                        if col in display_df.columns:
+                            display_df[col] = display_df[col].apply(lambda x: f"${x:.2f}")
+                    
+                    # Format percentage columns
+                    if 'Revenue Lift (%)' in display_df.columns:
+                        display_df['Revenue Lift (%)'] = display_df['Revenue Lift (%)'].apply(lambda x: f"{x:+.1f}%")
+                    
+                    st.dataframe(display_df, use_container_width=True)
+                else:
+                    st.warning("Test results don't contain enough columns for display.")
+            else:
+                st.warning("Test results don't contain the expected columns. Please check your file.")
     
-    # Download buttons for recommended prices
+    # Download buttons for pricing data
     if product_prices is not None or bundle_prices is not None:
-        st.header("Export Optimized Pricing")
+        st.header("Export Pricing Data")
         
         col1, col2 = st.columns(2)
         
