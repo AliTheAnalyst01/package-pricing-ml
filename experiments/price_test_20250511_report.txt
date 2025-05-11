@@ -1,0 +1,39 @@
+A/B TEST RESULTS: price_test_20250511
+Analysis Date: 2025-05-11
+Test Duration: 2025-05-11 to 2025-05-25
+
+SUMMARY:
+Total products tested: 5
+Successful price changes: 0 (0.0%)
+
+PRODUCT RESULTS:
+- Mens Casual Slim Fit:
+  Price change: $15.99 -> $23.98 (50.0%)
+  Conversion rate: 4.25% -> 1.07% (-75.0%)
+  Revenue per mille: $669.92 -> $245.11 (-63.4%)
+  Recommendation: Keep current price
+
+- Lock and Love Women's Removable Hooded Faux Leather Moto Biker Jacket:
+  Price change: $29.95 -> $17.97 (-40.0%)
+  Conversion rate: 2.50% -> 4.01% (+60.0%)
+  Revenue per mille: $732.93 -> $719.16 (-1.9%)
+  Recommendation: Keep current price
+
+- Acer SB220Q bi 21.5 inches Full HD (1920 x 1080) IPS Ultra-Thin:
+  Price change: $599.00 -> $898.50 (50.0%)
+  Conversion rate: 1.24% -> 0.31% (-75.0%)
+  Revenue per mille: $7384.93 -> $1636.61 (-77.8%)
+  Recommendation: Keep current price
+
+- WD 2TB Elements Portable External Hard Drive - USB 3.0 :
+  Price change: $64.00 -> $96.00 (50.0%)
+  Conversion rate: 2.40% -> 0.60% (-75.0%)
+  Revenue per mille: $1511.02 -> $568.89 (-62.4%)
+  Recommendation: Keep current price
+
+- SanDisk SSD PLUS 1TB Internal SSD - SATA III 6 Gb/s:
+  Price change: $109.00 -> $163.50 (50.0%)
+  Conversion rate: 4.46% -> 1.11% (-75.0%)
+  Revenue per mille: $4696.88 -> $1802.36 (-61.6%)
+  Recommendation: Keep current price
+
